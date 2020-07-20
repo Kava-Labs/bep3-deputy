@@ -101,8 +101,9 @@ func sendCompleteSwap(logger logger, senderExecutor, receiverExecutor common.Exe
 	if cmnErr != nil {
 		return fmt.Errorf("couldn't send htlt tx: %w", cmnErr)
 	}
+	logger.Log("htlt tx hash: ", htltTxHash)
 
-	err = wait(8*time.Second, func() (bool, error) {
+	err = wait(20*time.Second, func() (bool, error) {
 		s := senderExecutor.GetSentTxStatus(htltTxHash)
 		return s == store.TxSentStatusSuccess, nil
 	})

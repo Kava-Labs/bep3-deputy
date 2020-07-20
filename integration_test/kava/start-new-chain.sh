@@ -48,7 +48,7 @@ printf "$coldWalletMnemonic\n" | kvcli keys add cold-wallet --recover
 for i in {0..5}
 do
     printf "${testUserMnemonics[$i]}\n" | kvcli keys add test-user$i --recover
-    kvd add-genesis-account $(kvcli keys show test-user$i -a) 10000000ukava
+    kvd add-genesis-account $(kvcli keys show test-user$i -a) 10000000ukava,100000000bnb
 done
 
 # Create a delegation tx for the validator and add to genesis
