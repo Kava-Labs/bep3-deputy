@@ -12,6 +12,7 @@ import (
 
 	ec "github.com/ethereum/go-ethereum/common"
 	sdk "github.com/kava-labs/cosmos-sdk/types"
+	sdkerrors "github.com/kava-labs/cosmos-sdk/types/errors"
 	"github.com/kava-labs/cosmos-sdk/x/bank"
 	"github.com/kava-labs/go-sdk/client"
 	"github.com/kava-labs/go-sdk/kava"
@@ -259,13 +260,36 @@ func (executor *Executor) HTLT(randomNumberHash ec.Hash, timestamp int64, height
 		outCoin,
 		uint64(heightSpan),
 	)
-
+	if err := createMsg.ValidateBasic(); err != nil {
+		return "", common.NewError(err, false)
+	}
 	res, err := executor.Client.Broadcast(createMsg, client.Sync)
 	if err != nil {
-		return "", common.NewError(err, isInvalidSequenceError(err.Error()))
+		// Filter out temporary errors
+		// Most errors are not temporary, but errors raised when posting the tx through rpc likely are. And querying state for account numbers
+		// These can be filtered out by matching the string that appears in:
+		// github.com/kava-labs/tendermint@v0.33.4-0.20200520221629-77480532c622 /rpc/lib/client/http_json_client.go ln190
+		// Note, a tx being rejected from the mempool does not raise an error (for sync mode)
+		// TODO could also check for net/url.Error type, but that error is also returned when the url is invalid
+		tendermintClientHttpErrString := "Post failed"
+		if strings.Contains(err.Error(), tendermintClientHttpErrString) {
+			return "", common.NewError(err, true)
+		}
+		return "", common.NewError(err, false)
 	}
 	if res.Code != 0 {
-		return "", common.NewError(errors.New(res.Log), isInvalidSequenceError(res.Log))
+		// In mode 'sync' a tx is run delivered to tendermint, which runs it through the app, but only the antehandlers not the whole app.
+		// If an error occurs the transaction is rejected. Each error has a code.
+		// Common sdk errors are listed in cosmos-sdk/types/errors
+		temporaryErrorCodes := map[uint32]bool{
+			sdkerrors.ErrUnauthorized.ABCICode():      true, // returned when sig fails due to incorrect sequence
+			sdkerrors.ErrInvalidSequence.ABCICode():   true, // TODO not actually used
+			sdkerrors.ErrInsufficientFunds.ABCICode(): true, // TODO retry because the deputy could be topped up?
+			sdkerrors.ErrTxInMempoolCache.ABCICode():  true, // TODO
+			sdkerrors.ErrMempoolIsFull.ABCICode():     true, // TODO
+		}
+		isTempErr := temporaryErrorCodes[res.Code]
+		return "", common.NewError(errors.New(res.Log), isTempErr)
 	}
 
 	return res.Hash.String(), nil
