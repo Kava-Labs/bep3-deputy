@@ -7,60 +7,77 @@ import (
 	"testing"
 	"time"
 
-	sdk "github.com/kava-labs/cosmos-sdk/types"
+	ec "github.com/ethereum/go-ethereum/common"
 	"github.com/kava-labs/go-sdk/client"
-	app "github.com/kava-labs/go-sdk/kava"
+	"github.com/kava-labs/go-sdk/kava/bep3"
 	"github.com/stretchr/testify/require"
 
-	"github.com/binance-chain/bep3-deputy/common"
+	"github.com/binance-chain/bep3-deputy/integration_test/common"
 	"github.com/binance-chain/bep3-deputy/store"
 	"github.com/binance-chain/bep3-deputy/util"
 )
 
+func TestSendHTLT(t *testing.T) {
+
+	config := util.ParseConfigFromFile("../../integration_test/deputy/config.json")
+	config.KavaConfig.RpcAddr = common.KavaNodeURL
+
+	exe := NewExecutor(client.LocalNetwork, config.KavaConfig)
+
+	// calculate swap details
+	rndNum, err := bep3.GenerateSecureRandomNumber()
+	require.NoError(t, err)
+	timestamp := time.Now().Unix()
+	rndHash := ec.BytesToHash(bep3.CalculateRandomHash(rndNum, timestamp))
+
+	// ensure swap does not exist
+	swapIDBz, err := exe.CalcSwapId(rndHash, exe.GetDeputyAddress(), common.BnbUserAddrs[0])
+	require.NoError(t, err)
+	swapID := ec.BytesToHash(swapIDBz)
+
+	// send swap
+	txHash, cmnErr := exe.HTLT(
+		rndHash,
+		timestamp,
+		250,
+		common.KavaUserAddrs[0], // receiver
+		common.BnbUserAddrs[0],  // bnb chain sender
+		common.BnbDeputyAddr,    // bnb chain receiver
+		big.NewInt(100_000_000),
+	)
+	t.Log("error from sending swap: ", cmnErr)
+	require.Nil(t, cmnErr) // require.NoError will incorrectly throw an error if cmnErr is nil (because it's a nil pointer, not nil interface value)
+
+	common.Wait(10*time.Second, func() (bool, error) {
+		s := exe.GetSentTxStatus(txHash)
+		return s == store.TxSentStatusSuccess, nil
+	})
+
+	// check swap has been created
+	hasSwap, err := exe.HasSwap(swapID)
+	require.NoError(t, err)
+	require.True(t, hasSwap)
+}
 func TestSendAmount(t *testing.T) {
-	// Note: This test requires kvd to be running locally, with a funded deputy account.
 
-	kavaConfig := sdk.GetConfig()
-	app.SetBech32AddressPrefixes(kavaConfig)
-	kavaConfig.Seal()
+	config := util.ParseConfigFromFile("../../integration_test/deputy/config.json")
+	config.KavaConfig.RpcAddr = common.KavaNodeURL
 
-	deputyAddr, err := sdk.AccAddressFromBech32("kava1sl8glhaa9f9tep0d9h8gdcfmwcatghtdrfcd2x")
-	require.NoError(t, err)
-	coldAddr, err := sdk.AccAddressFromBech32("kava1ffv7nhd3z6sych2qpqkk03ec6hzkmufy0r2s4c")
-	require.NoError(t, err)
-	config := util.KavaConfig{
-		KeyType:                    "mnemonic",
-		Mnemonic:                   "slab twist stumble inmate predict parent repair crystal celery swarm memory loan rabbit blanket shell talk attend charge inside denial harbor music board steak",
-		RpcAddr:                    "tcp://localhost:26657",
-		Symbol:                     "bnb",
-		DeputyAddr:                 deputyAddr,
-		ColdWalletAddr:             coldAddr,
-		FetchInterval:              2,
-		TokenBalanceAlertThreshold: 10000,
-		KavaBalanceAlertThreshold:  10000,
-	}
-	exe := NewExecutor(client.LocalNetwork, &config)
+	exe := NewExecutor(client.LocalNetwork, config.KavaConfig)
 
 	amountToSend := big.NewInt(100_000_000)
-	previousBalance, err := exe.GetBalance(config.ColdWalletAddr.String())
+	previousBalance, err := exe.GetBalance(config.KavaConfig.ColdWalletAddr.String())
 
-	txHash, err := exe.SendAmount(config.ColdWalletAddr.String(), amountToSend)
+	txHash, err := exe.SendAmount(config.KavaConfig.ColdWalletAddr.String(), amountToSend)
 	require.NoError(t, err)
 
-	waitUntilTxInBlock(exe, txHash, 10*time.Second)
+	common.Wait(10*time.Second, func() (bool, error) {
+		s := exe.GetSentTxStatus(txHash)
+		return s == store.TxSentStatusSuccess, nil
+	})
 
 	// check coins have moved
-	balance, err := exe.GetBalance(config.ColdWalletAddr.String())
+	balance, err := exe.GetBalance(config.KavaConfig.ColdWalletAddr.String())
 	require.NoError(t, err)
 	require.Equal(t, balance, previousBalance.Add(previousBalance, amountToSend))
-}
-
-func waitUntilTxInBlock(executor common.Executor, txHash string, timeout time.Duration) {
-	var status store.TxStatus
-	endTime := time.Now().Add(timeout)
-
-	for !(status == store.TxSentStatusSuccess || time.Now().After(endTime)) {
-		time.Sleep(500 * time.Millisecond)
-		status = executor.GetSentTxStatus(txHash)
-	}
 }

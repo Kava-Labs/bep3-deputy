@@ -6,9 +6,11 @@ import (
 	"math/big"
 	"testing"
 
-	"github.com/binance-chain/bep3-deputy/common"
+	bep3Com "github.com/binance-chain/bep3-deputy/common"
 	"github.com/binance-chain/bep3-deputy/util"
 	"github.com/stretchr/testify/assert"
+
+	"github.com/binance-chain/bep3-deputy/integration_test/common"
 )
 
 func TestConcurrentBnbToKavaSwaps(t *testing.T) {
@@ -17,18 +19,18 @@ func TestConcurrentBnbToKavaSwaps(t *testing.T) {
 
 	config := util.ParseConfigFromFile("deputy/config.json")
 
-	var senderExecutors []common.Executor
-	for i := range bnbUserMnemonics {
-		senderExecutors = append(senderExecutors, setupUserExecutorBnb(*config.BnbConfig, bnbUserMnemonics[i]))
+	var senderExecutors []bep3Com.Executor
+	for i := range common.BnbUserMnemonics {
+		senderExecutors = append(senderExecutors, setupUserExecutorBnb(*config.BnbConfig, common.BnbUserMnemonics[i]))
 
 	}
-	senderAddrs := bnbUserAddrs
+	senderAddrs := common.BnbUserAddrs
 
-	var receiverExecutors []common.Executor
-	for i := range kavaUserMnemonics {
-		receiverExecutors = append(receiverExecutors, setupUserExecutorKava(*config.KavaConfig, kavaUserMnemonics[i]))
+	var receiverExecutors []bep3Com.Executor
+	for i := range common.KavaUserMnemonics {
+		receiverExecutors = append(receiverExecutors, setupUserExecutorKava(*config.KavaConfig, common.KavaUserMnemonics[i]))
 	}
-	receiverAddrs := kavaUserAddrs
+	receiverAddrs := common.KavaUserAddrs
 
 	// 2) Send swaps from bnb to kava
 

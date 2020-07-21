@@ -38,9 +38,12 @@ cleanup_after_test_with_deadlock:
 test_integration:
 	cd integration_test && run-tests.sh
 
+test_executor_integration:
+	executor/kava/run-tests.sh
+
 update_mock_executor:
 	go get github.com/golang/mock/gomock
 	go install github.com/golang/mock/mockgen
 	$(shell mockgen -source=common/executor.go -package mock > executor/mock/mock_executor.go)
 
-.PHONY: build test test_unit set_with_deadlock cleanup_after_test_with_deadlock update_mock_executor
+.PHONY: build test test_unit set_with_deadlock cleanup_after_test_with_deadlock update_mock_executor test_integration

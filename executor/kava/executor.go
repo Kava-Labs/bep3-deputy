@@ -230,8 +230,10 @@ func (executor *Executor) HTLT(randomNumberHash ec.Hash, timestamp int64, height
 	}
 
 	if !outAmount.IsInt64() {
-		return "", common.NewError(
-			fmt.Errorf(fmt.Sprintf("out amount(%s) is not int64", outAmount.String())), false)
+		return "", common.NewError(fmt.Errorf("out amount(%s) is not int64", outAmount), false)
+	}
+	if outAmount.Cmp(big.NewInt(0)) < 0 {
+		return "", common.NewError(fmt.Errorf("out amount (%s) is negative", outAmount), false)
 	}
 
 	outCoin := sdk.NewCoins(sdk.NewInt64Coin(executor.Config.Symbol, outAmount.Int64()))
@@ -266,11 +268,10 @@ func (executor *Executor) HTLT(randomNumberHash ec.Hash, timestamp int64, height
 	res, err := executor.Client.Broadcast(createMsg, client.Sync)
 	if err != nil {
 		// Filter out temporary errors
-		// Most errors are not temporary, but errors raised when posting the tx through rpc likely are. And querying state for account numbers
+		// Most errors are not temporary, but errors arising from connection issue should be.
 		// These can be filtered out by matching the string that appears in:
 		// github.com/kava-labs/tendermint@v0.33.4-0.20200520221629-77480532c622 /rpc/lib/client/http_json_client.go ln190
 		// Note, a tx being rejected from the mempool does not raise an error (for sync mode)
-		// TODO could also check for net/url.Error type, but that error is also returned when the url is invalid
 		tendermintClientHttpErrString := "Post failed"
 		if strings.Contains(err.Error(), tendermintClientHttpErrString) {
 			return "", common.NewError(err, true)
