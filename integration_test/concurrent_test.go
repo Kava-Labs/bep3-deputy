@@ -43,7 +43,7 @@ func TestConcurrentBnbToKavaSwaps(t *testing.T) {
 	for i := range senderExecutors {
 		go func(i int) {
 			t.Logf("sending swap %d\n", i)
-			err := sendCompleteSwap(t, senderExecutors[i], receiverExecutors[i], senderAddrs[i], receiverAddrs[i], swapAmount, bnbDeputyAddr, kavaDeputyAddr, 20000)
+			err := sendCompleteSwap(t, senderExecutors[i], receiverExecutors[i], senderAddrs[i], receiverAddrs[i], swapAmount, common.BnbDeputyAddr, common.KavaDeputyAddr, 20000)
 			results <- result{i, err}
 		}(i)
 	}

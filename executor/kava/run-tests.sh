@@ -7,7 +7,7 @@ set -e
 
 cd integration_test
 
-# start up the deputy and chains
+# start up the chain
 docker-compose up -d kavanode
 
 # wait until the node is operational

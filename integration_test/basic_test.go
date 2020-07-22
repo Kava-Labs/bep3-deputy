@@ -189,7 +189,7 @@ func TestKavaToBnbSwap(t *testing.T) {
 	// 3) Send swap
 
 	swapAmount := big.NewInt(99_000_000)
-	err = sendCompleteSwap(t, senderExecutor, receiverExecutor, senderAddr, receiverAddr, swapAmount, kavaDeputyAddr, bnbDeputyAddr, 250)
+	err = sendCompleteSwap(t, senderExecutor, receiverExecutor, senderAddr, receiverAddr, swapAmount, common.KavaDeputyAddr, common.BnbDeputyAddr, 250)
 	require.NoError(t, err)
 
 	// 4) Check balances

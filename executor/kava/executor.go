@@ -267,30 +267,10 @@ func (executor *Executor) HTLT(randomNumberHash ec.Hash, timestamp int64, height
 	}
 	res, err := executor.Client.Broadcast(createMsg, client.Sync)
 	if err != nil {
-		// Filter out temporary errors
-		// Most errors are not temporary, but errors arising from connection issue should be.
-		// These can be filtered out by matching the string that appears in:
-		// github.com/kava-labs/tendermint@v0.33.4-0.20200520221629-77480532c622 /rpc/lib/client/http_json_client.go ln190
-		// Note, a tx being rejected from the mempool does not raise an error (for sync mode)
-		tendermintClientHttpErrString := "Post failed"
-		if strings.Contains(err.Error(), tendermintClientHttpErrString) {
-			return "", common.NewError(err, true)
-		}
-		return "", common.NewError(err, false)
+		return "", common.NewError(err, isRetryableBroadcastError(err))
 	}
 	if res.Code != 0 {
-		// In mode 'sync' a tx is run delivered to tendermint, which runs it through the app, but only the antehandlers not the whole app.
-		// If an error occurs the transaction is rejected. Each error has a code.
-		// Common sdk errors are listed in cosmos-sdk/types/errors
-		temporaryErrorCodes := map[uint32]bool{
-			sdkerrors.ErrUnauthorized.ABCICode():      true, // returned when sig fails due to incorrect sequence
-			sdkerrors.ErrInvalidSequence.ABCICode():   true, // TODO not actually used
-			sdkerrors.ErrInsufficientFunds.ABCICode(): true, // TODO retry because the deputy could be topped up?
-			sdkerrors.ErrTxInMempoolCache.ABCICode():  true, // TODO
-			sdkerrors.ErrMempoolIsFull.ABCICode():     true, // TODO
-		}
-		isTempErr := temporaryErrorCodes[res.Code]
-		return "", common.NewError(errors.New(res.Log), isTempErr)
+		return "", common.NewError(errors.New(res.Log), isRetryableErrorCode(res.Code))
 	}
 
 	return res.Hash.String(), nil
@@ -327,10 +307,10 @@ func (executor *Executor) Claim(swapId ec.Hash, randomNumber ec.Hash) (string, *
 
 	res, err := executor.Client.Broadcast(claimMsg, client.Sync)
 	if err != nil {
-		return "", common.NewError(err, isInvalidSequenceError(err.Error()))
+		return "", common.NewError(err, isRetryableBroadcastError(err))
 	}
 	if res.Code != 0 {
-		return "", common.NewError(errors.New(res.Log), isInvalidSequenceError(res.Log))
+		return "", common.NewError(errors.New(res.Log), isRetryableErrorCode(res.Code))
 	}
 
 	return res.Hash.String(), nil
@@ -361,10 +341,10 @@ func (executor *Executor) Refund(swapId ec.Hash) (string, *common.Error) {
 
 	res, err := executor.Client.Broadcast(refundMsg, client.Sync)
 	if err != nil {
-		return "", common.NewError(err, isInvalidSequenceError(err.Error()))
+		return "", common.NewError(err, isRetryableBroadcastError(err))
 	}
 	if res.Code != 0 {
-		return "", common.NewError(errors.New(res.Log), isInvalidSequenceError(res.Log))
+		return "", common.NewError(errors.New(res.Log), isRetryableErrorCode(res.Code))
 	}
 
 	return res.Hash.String(), nil
@@ -595,15 +575,36 @@ func (executor *Executor) SendAmount(address string, amount *big.Int) (string, e
 
 	res, err := executor.Client.Broadcast(sendMsg, client.Sync)
 	if err != nil {
-		return "", common.NewError(err, isInvalidSequenceError(err.Error()))
+		return "", common.NewError(err, isRetryableBroadcastError(err))
 	}
 	if res.Code != 0 {
-		return "", common.NewError(errors.New(res.Log), isInvalidSequenceError(res.Log))
+		return "", common.NewError(errors.New(res.Log), isRetryableErrorCode(res.Code))
 	}
 
 	return res.Hash.String(), nil
 }
 
-func isInvalidSequenceError(err string) bool {
-	return strings.Contains(strings.ToLower(err), "signature verification failed")
+func isRetryableBroadcastError(err error) bool {
+	// Filter out temporary errors
+	// Most errors are not temporary, but errors arising from connection issue should be.
+	// These can be filtered out by matching the string that appears in:
+	// github.com/kava-labs/tendermint@v0.33.4-0.20200520221629-77480532c622 /rpc/lib/client/http_json_client.go ln190
+	tendermintClientHttpErrString := "Post failed"
+	// Note, a tx being rejected from the mempool does not raise an error (for sync mode)
+	return strings.Contains(err.Error(), tendermintClientHttpErrString)
+}
+
+func isRetryableErrorCode(code uint32) bool {
+	// In broadcast mode 'sync' a tx is run through the app's antehandler before entering the mempool.
+	// If an error occurs the transaction is rejected with an error code.
+	// Common sdk errors are listed in cosmos-sdk/types/errors
+	temporaryErrorCodes := map[uint32]bool{
+		sdkerrors.ErrUnauthorized.ABCICode():      true, // returned when sig fails due to incorrect sequence
+		sdkerrors.ErrInvalidSequence.ABCICode():   true, // not currently used, but if that changes we want to retry
+		sdkerrors.ErrInsufficientFunds.ABCICode(): true, // returned when there is no funds to pay fees
+		sdkerrors.ErrInsufficientFee.ABCICode():   true, // returned when the tx's fees are less than validator's min accepted
+		sdkerrors.ErrTxInMempoolCache.ABCICode():  true, // tx is already in mempool
+		sdkerrors.ErrMempoolIsFull.ABCICode():     true,
+	}
+	return temporaryErrorCodes[code]
 }
